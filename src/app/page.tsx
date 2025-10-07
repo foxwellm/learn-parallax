@@ -3,137 +3,141 @@
 import {
   motion,
   MotionValue,
-  useMotionValueEvent,
   useScroll,
-  useSpring,
   useTransform,
+  useSpring,
 } from "motion/react";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 
-// Parallax helper
-function useParallax(value: MotionValue<number>, distance: number, stiffness = 100, damping = 30) {
-  const yRaw = useTransform(value, [0, 1], [-distance, distance]);
-  const ySmooth = useSpring(yRaw, { stiffness, damping, mass: 0.5 });
-  return ySmooth;
+/**
+ * Convert a 0..1 motion value into a smoothed Y transform (px).
+ */
+function useParallax(value: MotionValue<number>, distance: number, stiffness = 120, damping = 30) {
+  const yRaw = useTransform(value, [0, 1], [distance, -distance]); // when section enters -> moves toward center -> continues
+  return useSpring(yRaw, { stiffness, damping, mass: 0.5 });
 }
 
-function Image({ id }: { id: number }) {
-  const ref = useRef(null);
-  const { scrollYProgress } = useScroll({ target: ref });
+/**
+ * One section that has its own local parallax.
+ */
+function ParallaxSection({
+  id,
+  src,
+  depth = 520,
+}: {
+  id: number;
+  src: string;
+  depth?: number; // how far the element moves (px)
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
 
-  // Each layer uses its own spring for smooth parallax
-  const y = useParallax(scrollYProgress, 300, 120, 35);
+  // Local scroll progress for this section only
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    // "start end" -> when section top hits bottom of viewport = 0
+    // "end start" -> when section bottom hits top of viewport = 1
+    offset: ["start end", "end start"],
+  });
+
+  // Smoothed transforms for image and title (title moves slightly less)
+  const yImage = useParallax(scrollYProgress, depth, 140, 35);
+  const yTitle = useParallax(scrollYProgress, depth * 0.55, 140, 36); // .55 gives some visual offset
 
   return (
-    <section className="img-container">
-      <div ref={ref}>
-        <img src={`/workprofile.jpeg`} alt="A London skyscraper" />
-      </div>
-      <motion.h2 style={{ y }}>{`#00${id}`}</motion.h2>
+    <section ref={ref} className="parallax-section">
+      <motion.div style={{ y: yImage }} className="img-wrap">
+        <img src={src} alt={`Image ${id}`} />
+      </motion.div>
+
+      <motion.h2 style={{ y: yTitle }} className="section-title">
+        {`#00${id}`}
+      </motion.h2>
     </section>
   );
 }
 
-export default function Parallax() {
-  const { scrollYProgress } = useScroll();
-
-  // Smoothed global progress bar
-  const scaleX = useSpring(scrollYProgress, {
-    stiffness: 50,
-    damping: 30,
-    mass: 0.5,
-  });
-
-  // For debug display
-  const [progress, setProgress] = useState(0);
-  useMotionValueEvent(scrollYProgress, "change", (latest) => {
-    setProgress(latest);
-  });
-
+/**
+ * Page with multiple local-parallax sections
+ */
+export default function Page() {
   return (
-    <div id="example">
-      {/* Scroll Progress Display */}
-      <div className="fixed top-4 left-4 p-2 bg-black/50 rounded text-white z-20">
-        Scroll Progress: {(progress * 100).toFixed(1)}%
-      </div>
-
-      {[1, 2, 3, 4, 5].map((image) => (
-        <Image key={image} id={image} />
+    <div>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <ParallaxSection key={i} id={i} src="/workprofile.jpeg" />
       ))}
 
-      {/* Progress Bar */}
-      <motion.div className="progress" style={{ scaleX }} />
-      <StyleSheet />
+      <Styles />
     </div>
   );
 }
 
-/**
- * ==============   Styles   ================
- */
-function StyleSheet() {
+/** Simple styles (keep scroll-snap OFF) */
+function Styles() {
   return (
     <style>{`
-      html {
-        scroll-snap-type: y mandatory;
+      html, body {
+        height: 100%;
       }
 
-      .img-container {
-        height: 100vh;
-        scroll-snap-align: start;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        position: relative;
-      }
+      /* IMPORTANT: don't use snap-type: it causes hard jumps */
+      /* html { scroll-snap-type: y mandatory; } */
 
-      .img-container > div {
-        width: 300px;
-        height: 400px;
-        margin: 20px;
-        background: #f5f5f5;
-        overflow: hidden;
-      }
-
-      .img-container img {
-        width: 300px;
-        height: 400px;
-      }
-
-      @media (max-width: 500px) {
-        .img-container > div {
-          width: 150px;
-          height: 200px;
-        }
-
-        .img-container img {
-          width: 150px;
-          height: 200px;
-        }
-      }
-
-      .img-container h2 {
-        color: #8df0cc;
+      body {
         margin: 0;
-        font-family: "Azeret Mono", monospace;
-        font-size: 50px;
-        font-weight: 700;
-        letter-spacing: -3px;
-        line-height: 1.2;
-        position: absolute;
-        display: inline-block;
-        top: calc(50% - 25px);
-        left: calc(50% + 120px);
+        background: #000;
+        color: #fff;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
 
-      .progress {
-        position: fixed;
-        left: 0;
-        right: 0;
-        height: 5px;
-        background: #8df0cc;
-        bottom: 50px;
-        transform: scaleX(0);
+      .parallax-section {
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        overflow: visible; /* allow motioned elements to go outside */
+        padding: 2rem;
+      }
+
+      .img-wrap {
+        width: 320px;
+        height: 420px;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+        background: #111;
+      }
+
+      .img-wrap img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .section-title {
+        position: absolute;
+
+        left: calc(50% + 220px);
+        color: #8df0cc;
+        font-family: "Azeret Mono", monospace;
+        font-weight: 800;
+        font-size: clamp(28px, 4.4vw, 54px);
+        letter-spacing: -2px;
+        pointer-events: none;
+      }
+
+      @media (max-width: 900px) {
+        .section-title {
+          left: calc(50% + 160px);
+          font-size: clamp(24px, 4.5vw, 40px);
+        }
+      }
+
+      @media (max-width: 600px) {
+        .img-wrap { width: 200px; height: 260px; }
+        .section-title { left: calc(50% + 130px); font-size: 22px; }
       }
     `}</style>
   );
